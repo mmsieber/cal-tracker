@@ -1,14 +1,17 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:calorie_tracker/utils/gpt_api.dart';
+import 'package:calorie_tracker/utils/gpt4_vision_service.dart';
 
 class MealInputScreen extends StatefulWidget {
   final String selectedDate;
 
-  MealInputScreen({required this.selectedDate});
+  const MealInputScreen({Key? key, required this.selectedDate}) : super(key: key);
 
   @override
-  _MealInputScreenState createState() => _MealInputScreenState();
+  State<MealInputScreen> createState() => _MealInputScreenState();
 }
 
 class _MealInputScreenState extends State<MealInputScreen> {
@@ -16,6 +19,8 @@ class _MealInputScreenState extends State<MealInputScreen> {
   String _selectedCategory = "Breakfast";
   final List<Map<String, dynamic>> _ingredients = [];
   final Map<int, TextEditingController> _controllers = {};
+  File? _selectedImage;
+  final ImagePicker _picker = ImagePicker();
 
   void _addIngredient(String item, {double amount = 0.0}) {
     setState(() {
@@ -41,20 +46,41 @@ class _MealInputScreenState extends State<MealInputScreen> {
     });
   }
 
+  Future<void> _pickImage() async {
+    final XFile? image = await _picker.pickImage(source: ImageSource.camera);
+    if (image != null) {
+      if (!mounted) return;
+      setState(() {
+        _selectedImage = File(image.path);
+      });
+
+      try {
+        final nutritionData = await Gpt4VisionService.analyzeImage(_selectedImage!);
+        if (mounted) {
+          _updateMealWithNutrition(nutritionData);
+          _showFeedbackDialog(nutritionData);
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text("Failed to extract nutrition data: $e")),
+          );
+        }
+      }
+    }
+  }
+
   Future<void> _saveMeal() async {
+    if (!mounted) return;
     final box = Hive.box('calorieData');
     final mealData = {
       "description": _mealDescription,
       "category": _selectedCategory,
       "ingredients": _ingredients.map((ingredient) {
-        if (ingredient["sliderActive"] && ingredient["amount"] > 0) {
-          return {
-            "item": ingredient["item"],
-            "amount": ingredient["amount"],
-          };
-        } else {
-          return {"item": ingredient["item"]};
-        }
+        return {
+          "item": ingredient["item"],
+          "amount": ingredient["sliderActive"] ? ingredient["amount"] : 0.0,
+        };
       }).toList(),
     };
 
@@ -66,183 +92,63 @@ class _MealInputScreenState extends State<MealInputScreen> {
       await box.put(widget.selectedDate, {"meals": [mealData]});
     }
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text("Meal saved for ${widget.selectedDate}!")),
-    );
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Meal saved for ${widget.selectedDate}!")),
+      );
+    }
 
-    // Fetch feedback from GPT and update the meal
-    final feedback = await GPTApi.getCalories(mealData);
-    await _updateMealWithNutrition(feedback, widget.selectedDate, box.get(widget.selectedDate));
-
-    // Show feedback before returning to the HomeScreen
-    _showFeedbackDialog(feedback);
+    try {
+      final feedback = await GPTApi.getCalories(mealData);
+      if (mounted) {
+        await _updateMealWithNutrition(feedback);
+        _showFeedbackDialog(feedback);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Error fetching nutrition data: $e")),
+        );
+      }
+    }
   }
 
-  Future<void> _updateMealWithNutrition(
-      Map<String, dynamic> nutritionData, String selectedDate, dynamic dayData) async {
+  Future<void> _updateMealWithNutrition(Map<String, dynamic> nutritionData) async {
     final box = Hive.box('calorieData');
+    final dayData = box.get(widget.selectedDate);
 
     if (dayData is Map<String, dynamic> && dayData["meals"] is List) {
       dayData["meals"].last["nutrition"] = nutritionData;
-      await box.put(selectedDate, dayData);
-    } else {
-      print("Error: Invalid dayData format.");
+      await box.put(widget.selectedDate, dayData);
     }
   }
 
   void _showFeedbackDialog(Map<String, dynamic> feedback) {
-    dynamic parseValue(dynamic field) {
-      if (field is num) {
-        return field;
-      } else if (field is String) {
-        final numericValue = double.tryParse(field.replaceAll(RegExp(r'[^0-9.]'), '')) ?? 0;
-        return numericValue % 1 == 0 ? numericValue.toInt() : numericValue;
-      } else {
-        return 0;
-      }
-    }
-
-    final calories = parseValue(feedback['calories']);
-    final protein = parseValue(feedback['protein']);
-    final carbs = parseValue(feedback['carbs']);
-    final fat = parseValue(feedback['fat']);
-
-    if (calories == 0 && protein == 0 && carbs == 0 && fat == 0) {
-      print("Error: Nutrition data is null or invalid.");
-      return;
-    }
+    if (!mounted) return;
 
     showDialog(
       context: context,
       builder: (context) {
         return AlertDialog(
-          title: Text("Meal Feedback"),
+          title: const Text("Meal Feedback"),
           content: Text(
-            "Calories: $calories kcal\n"
-            "Protein: ${protein}g\n"
-            "Carbs: ${carbs}g\n"
-            "Fat: ${fat}g",
+            "Calories: ${feedback['calories']} kcal\n"
+            "Protein: ${feedback['protein']}g\n"
+            "Carbs: ${feedback['carbs']}g\n"
+            "Fat: ${feedback['fat']}g",
           ),
           actions: [
             TextButton(
               onPressed: () {
-                Navigator.of(context).pop(); // Close feedback dialog
-                Navigator.of(context).pop(true); // Navigate back to HomeScreen with success flag
+                if (mounted) {
+                  Navigator.of(context).pop();
+                }
               },
-              child: Text("OK"),
+              child: const Text("OK"),
             ),
           ],
         );
       },
-    );
-  }
-
-  @override
-  void dispose() {
-    for (var controller in _controllers.values) {
-      controller.dispose();
-    }
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: Text("Track Meal")),
-      body: Padding(
-        padding: EdgeInsets.all(16.0),
-        child: ListView(
-          children: [
-            Text("Select Meal Category:", style: TextStyle(fontSize: 16)),
-            SizedBox(height: 10),
-            DropdownButton<String>(
-              value: _selectedCategory,
-              items: ["Breakfast", "Lunch", "Dinner", "Snack"]
-                  .map((category) => DropdownMenuItem(
-                        value: category,
-                        child: Text(category),
-                      ))
-                  .toList(),
-              onChanged: (value) {
-                setState(() {
-                  _selectedCategory = value!;
-                });
-              },
-            ),
-            SizedBox(height: 20),
-            Text("Describe your meal:", style: TextStyle(fontSize: 16)),
-            SizedBox(height: 10),
-            TextField(
-              decoration: InputDecoration(
-                border: OutlineInputBorder(),
-                hintText: "e.g., 2 eggs and avocado",
-              ),
-              onChanged: (value) {
-                setState(() {
-                  _mealDescription = value;
-                });
-              },
-            ),
-            SizedBox(height: 20),
-            Text("Ingredients:", style: TextStyle(fontSize: 16)),
-            SizedBox(height: 10),
-            Column(
-              children: _ingredients.asMap().entries.map((entry) {
-                final index = entry.key;
-                final ingredient = entry.value;
-                return Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: _controllers[index],
-                        decoration: InputDecoration(hintText: "Enter ingredient"),
-                        onChanged: (value) {
-                          setState(() {
-                            ingredient["item"] = value;
-                          });
-                        },
-                      ),
-                    ),
-                    IconButton(
-                      icon: Icon(ingredient["sliderActive"] ? Icons.close : Icons.tune),
-                      onPressed: () => _toggleSlider(index),
-                    ),
-                    if (ingredient["sliderActive"])
-                      Expanded(
-                        child: Slider(
-                          min: 0,
-                          max: 500,
-                          divisions: 50,
-                          value: ingredient["amount"],
-                          onChanged: (value) {
-                            setState(() {
-                              ingredient["amount"] = value;
-                            });
-                          },
-                        ),
-                      ),
-                    if (ingredient["sliderActive"])
-                      Text("${ingredient["amount"].toInt()}g"),
-                    IconButton(
-                      icon: Icon(Icons.delete, color: Colors.red),
-                      onPressed: () => _removeIngredient(index),
-                    ),
-                  ],
-                );
-              }).toList(),
-            ),
-            ElevatedButton(
-              onPressed: () => _addIngredient(""),
-              child: Text("+ Add Ingredient"),
-            ),
-            SizedBox(height: 20),
-            ElevatedButton(
-              onPressed: _saveMeal,
-              child: Text("Save Meal"),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }

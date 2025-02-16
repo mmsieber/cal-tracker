@@ -4,36 +4,18 @@ import 'package:hive_flutter/hive_flutter.dart';
 class WaterInputScreen extends StatefulWidget {
   final String selectedDate;
 
-  WaterInputScreen({required this.selectedDate});
+  const WaterInputScreen({Key? key, required this.selectedDate}) : super(key: key);
 
   @override
-  _WaterInputScreenState createState() => _WaterInputScreenState();
+  WaterInputScreenState createState() => WaterInputScreenState();
 }
 
-class _WaterInputScreenState extends State<WaterInputScreen> {
-  double _waterAmount = 25.0; // Default to 25cl (0.25L)
+class WaterInputScreenState extends State<WaterInputScreen> {
   final TextEditingController _controller = TextEditingController();
-
-  @override
-  void initState() {
-    super.initState();
-    _loadExistingWaterData();
-  }
-
-  void _loadExistingWaterData() {
-    final box = Hive.box('calorieData');
-    final existingData = box.get(widget.selectedDate, defaultValue: {"meals": [], "water": 0.0});
-
-    if (existingData is Map && existingData.containsKey("water")) {
-      setState(() {
-        _waterAmount = (existingData["water"] as double);
-      });
-    }
-  }
+  double _waterAmount = 0.0;
 
   Future<void> _saveWaterIntake() async {
     final box = Hive.box('calorieData');
-    final existingData = box.get(widget.selectedDate, defaultValue: {"meals": [], "water": 0.0});
 
     double newWaterAmount = _waterAmount;
     if (_controller.text.isNotEmpty) {
@@ -44,57 +26,48 @@ class _WaterInputScreenState extends State<WaterInputScreen> {
     }
 
     final updatedData = {
-      "meals": existingData["meals"] ?? [],
-      "water": newWaterAmount, // Update total water intake in cl
+      "meals": box.get(widget.selectedDate)?["meals"] ?? [],
+      "water": newWaterAmount,
     };
 
     await box.put(widget.selectedDate, updatedData);
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text("Water intake saved for ${widget.selectedDate}!")),
-    );
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Water intake saved for ${widget.selectedDate}!")),
+      );
 
-    Navigator.of(context).pop();
+      Navigator.of(context).pop();
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text("Log Water Intake")),
+      appBar: AppBar(title: const Text("Track Water Intake")),
       body: Padding(
-        padding: EdgeInsets.all(16.0),
+        padding: const EdgeInsets.all(16.0),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text("Enter Water Intake (cl):", style: TextStyle(fontSize: 16)),
-            SizedBox(height: 10),
+            const Text("Enter Water Intake (ml):", style: TextStyle(fontSize: 16)),
             TextField(
               controller: _controller,
-              keyboardType: TextInputType.numberWithOptions(decimal: true),
-              decoration: InputDecoration(
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(
                 border: OutlineInputBorder(),
-                hintText: "e.g., 25 (centiliters)",
+                hintText: "e.g., 500",
               ),
             ),
-            SizedBox(height: 20),
-            Text("Or use the slider:", style: TextStyle(fontSize: 16)),
-            Slider(
-              min: 10.0, // 10cl minimum
-              max: 200.0, // 200cl (2 liters) max
-              divisions: 19, // Allows selection every 10cl
-              value: _waterAmount,
-              label: "${_waterAmount.toStringAsFixed(0)} cl",
-              onChanged: (value) {
-                setState(() {
-                  _waterAmount = value;
-                });
-              },
-            ),
-            Text("Selected: ${_waterAmount.toStringAsFixed(0)} cl"),
-            SizedBox(height: 20),
+            const SizedBox(height: 20),
             ElevatedButton(
               onPressed: _saveWaterIntake,
-              child: Text("Save Water Intake"),
+              child: const Text("Save Water Intake"),
             ),
           ],
         ),
