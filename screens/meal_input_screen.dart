@@ -1,14 +1,14 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
-import 'package:image_picker/image_picker.dart';
+import 'package:image_picker/image_picker.dart'; // ✅ Fix: Ensure this package is installed
 import 'package:calorie_tracker/utils/gpt_api.dart';
 import 'package:calorie_tracker/utils/gpt4_vision_service.dart';
 
 class MealInputScreen extends StatefulWidget {
   final String selectedDate;
 
-  const MealInputScreen({Key? key, required this.selectedDate}) : super(key: key);
+  const MealInputScreen({super.key, required this.selectedDate}); // ✅ Fix: Used 'super.key'
 
   @override
   State<MealInputScreen> createState() => _MealInputScreenState();
@@ -149,6 +149,58 @@ class _MealInputScreenState extends State<MealInputScreen> {
           ],
         );
       },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text("Track Meal")),
+      body: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: ListView(
+          children: [
+            const Text("Select Meal Category:", style: TextStyle(fontSize: 16)),
+            DropdownButton<String>(
+              value: _selectedCategory,
+              items: ["Breakfast", "Lunch", "Dinner", "Snack"]
+                  .map((category) => DropdownMenuItem(
+                        value: category,
+                        child: Text(category),
+                      ))
+                  .toList(),
+              onChanged: (value) {
+                setState(() {
+                  _selectedCategory = value!;
+                });
+              },
+            ),
+            const SizedBox(height: 20),
+            Row(
+              children: [
+                const Text("Describe your meal:", style: TextStyle(fontSize: 16)),
+                IconButton(
+                  icon: const Icon(Icons.camera_alt, color: Colors.blue),
+                  onPressed: _pickImage,
+                ),
+              ],
+            ),
+            TextField(
+              decoration: const InputDecoration(
+                border: OutlineInputBorder(),
+                hintText: "e.g., 2 eggs and avocado",
+              ),
+              onChanged: (value) {
+                setState(() {
+                  _mealDescription = value;
+                });
+              },
+            ),
+            const SizedBox(height: 20),
+            ElevatedButton(onPressed: _saveMeal, child: const Text("Save Meal")),
+          ],
+        ),
+      ),
     );
   }
 }
