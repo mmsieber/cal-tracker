@@ -1,17 +1,17 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
-import 'package:image_picker/image_picker.dart'; // ✅ Fix: Ensure this package is installed
+import 'package:image_picker/image_picker.dart';
 import 'package:calorie_tracker/utils/gpt_api.dart';
 import 'package:calorie_tracker/utils/gpt4_vision_service.dart';
 
 class MealInputScreen extends StatefulWidget {
   final String selectedDate;
 
-  const MealInputScreen({super.key, required this.selectedDate}); // ✅ Fix: Used 'super.key'
+  const MealInputScreen({Key? key, required this.selectedDate}) : super(key: key);
 
   @override
-  State<MealInputScreen> createState() => _MealInputScreenState();
+  _MealInputScreenState createState() => _MealInputScreenState();
 }
 
 class _MealInputScreenState extends State<MealInputScreen> {
